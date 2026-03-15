@@ -3,14 +3,15 @@
 from flask import Flask, render_template, request, jsonify
 import cv2
 import numpy as np
-from tensorflow import keras
-from keras.models import load_model
-import base64
+import torch
+import torch.nn as nn
+import torchvision.models as models
 from PIL import Image
 import io
 import sqlite3
 from datetime import datetime
 import os
+import base64
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max
@@ -30,19 +31,33 @@ EMOTION_EMOJIS = {
 }
 
 
-MODEL_PATH = 'emotion_model.h5'
+MODEL_PATH = 'emotion_model.pth'
+
+class EmotionDetector(nn.Module):
+    def __init__(self):
+        super(EmotionDetector, self).__init__()
+        self.model = models.resnet18(pretrained=True)
+        self.model.fc = nn.Linear(512, 7)
+
+    def forward(self, x):
+        return self.model(x)
 
 print("Loading emotion detection model...")
 try:
-    model = load_model(MODEL_PATH, compile=False)
-    model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    model = EmotionDetector()
+    model.load_state_dict(torch.load(MODEL_PATH, map_location=device))
+    model = model.to(device)
+    model.eval()
     print("✓ Model loaded successfully!")
     MODEL_LOADED = True
 except Exception as e:
     print(f"⚠️  Could not load model: {e}")
     print("The app will use demo mode with random predictions")
-    print("Please download the model using: python model.py")
+    print("Please run: python model.py")
     MODEL_LOADED = False
+    device = torch.device('cpu')
+    model = None
 
 
 try:
@@ -88,13 +103,17 @@ def detect_and_predict_emotion(image):
     
     face_roi = gray[y:y+h, x:x+w]
     face_roi = cv2.resize(face_roi, (48, 48))
-    face_roi = face_roi.astype('float32') / 255.0
-    face_roi = np.expand_dims(face_roi, axis=0)
-    face_roi = np.expand_dims(face_roi, axis=-1)
     
     
-    if MODEL_LOADED:
-        predictions = model.predict(face_roi, verbose=0)[0]
+    if MODEL_LOADED and model is not None:
+        # Convert to PyTorch tensor
+        face_tensor = torch.FloatTensor(face_roi / 255.0)
+        # Convert grayscale to RGB (repeat channel 3 times for ResNet)
+        face_tensor = face_tensor.repeat(3, 1, 1).unsqueeze(0).to(device)
+        
+        with torch.no_grad():
+            outputs = model(face_tensor)
+            predictions = torch.softmax(outputs, dim=1)[0].cpu().numpy()
     else:
         
         predictions = np.random.dirichlet(np.ones(7))
@@ -229,9 +248,10 @@ def stats():
 
 if __name__ == '__main__':
     print("\n" + "="*60)
-    print("🎭 EMOTION DETECTION WEB APP")
+    print("🎭 EMOTION DETECTION WEB APP (PyTorch)")
     print("="*60)
     print(f"Model: {'✓ Loaded' if MODEL_LOADED else '⚠️  Demo Mode'}")
+    print(f"Device: {device}")
     print("Server starting on http://localhost:5000")
     print("="*60 + "\n")
     
