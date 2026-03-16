@@ -36,7 +36,7 @@ MODEL_PATH = 'emotion_model.pth'
 class EmotionDetector(nn.Module):
     def __init__(self):
         super(EmotionDetector, self).__init__()
-        self.model = models.resnet18(pretrained=True)
+        self.model = models.resnet18(weights=models.ResNet18_Weights.DEFAULT)
         self.model.fc = nn.Linear(512, 7)
 
     def forward(self, x):

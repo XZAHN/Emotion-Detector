@@ -5,16 +5,14 @@ import torch.nn as nn
 import torchvision.models as models
 import numpy as np
 import os
-import urllib.request
-
 
 EMOTION_LABELS = ['Angry', 'Disgust', 'Fear', 'Happy', 'Sad', 'Surprise', 'Neutral']
 
 class EmotionDetector(nn.Module):
     def __init__(self):
         super(EmotionDetector, self).__init__()
-        # Load pretrained ResNet18
-        self.model = models.resnet18(pretrained=True)
+        # Load pretrained ResNet18 using modern torchvision API
+        self.model = models.resnet18(weights=models.ResNet18_Weights.DEFAULT)
         # Replace the final fully connected layer for 7 emotions
         self.model.fc = nn.Linear(512, 7)
 
